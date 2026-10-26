@@ -11,6 +11,20 @@ Tela: IP e porta do broker (salvos no aparelho), Conectar/Desconectar com indica
 (-32768..32767), botão **Enviar ao CLP** e o resultado com o horário da última atualização. A operação é escolhida
 nos botões físicos do CLP (ou no simulador: `+ - x /`).
 
+## Build rápido (scripts)
+
+```bash
+mobile/scripts/build-ios.sh            # compila, instala no iPhone pareado e abre o app
+mobile/scripts/build-ios.sh --build    # só compila
+
+mobile/scripts/build-android.sh          # compila o APK, instala no celular do adb e abre o app
+mobile/scripts/build-android.sh --build  # só gera o APK
+```
+
+- iOS: o Team ID é lido do certificado "Apple Development" do keychain (ou `DEVELOPMENT_TEAM=<TeamID>`), e o
+  iPhone é o primeiro aparelho físico pareado (ou `DEVICE=<UDID>`, veja `xcrun devicectl list devices`).
+- Android: usa o JDK 17 e o SDK do Homebrew (`brew install openjdk@17` e `brew install --cask android-commandlinetools`).
+
 ## iOS (Swift / SwiftUI + CocoaMQTT)
 
 ```bash
@@ -22,12 +36,34 @@ open CalculadoraCLP.xcodeproj        # gerado a partir de project.yml (xcodegen 
 - iPhone físico: Signing & Capabilities > selecione seu Team (Apple ID gratuito serve) e rode pelo cabo.
   Na primeira conexão o iOS pede a permissão de **Rede Local**: aceite.
 
+### Build e instalação pelo terminal
+
+Preparar o iPhone (uma vez): conecte pelo cabo, toque em **Confiar neste computador** e ative
+Ajustes > Privacidade e Segurança > **Modo de Desenvolvedor** (o iPhone reinicia).
+
+```bash
+cd mobile/ios
+xcodebuild -project CalculadoraCLP.xcodeproj -scheme CalculadoraCLP \
+  -destination 'generic/platform=iOS' -derivedDataPath build \
+  -allowProvisioningUpdates DEVELOPMENT_TEAM=<TeamID> build
+
+xcrun devicectl list devices                     # pegue o identificador do iPhone
+xcrun devicectl device install app --device <UDID> build/Build/Products/Debug-iphoneos/CalculadoraCLP.app
+xcrun devicectl device process launch --device <UDID> br.edu.modbusopcua.CalculadoraCLP
+```
+
+- Na primeira vez que abrir, se o iOS disser "Desenvolvedor não confiável", vá em Ajustes > Geral > VPN e Gerenciamento de
+  Dispositivo e confie no seu Apple ID.
+- Apple ID gratuito: o app expira em 7 dias. Basta compilar e instalar de novo.
+- "Bundle ID indisponível": troque `br.edu.modbusopcua.CalculadoraCLP` no `project.yml` e rode `xcodegen generate`.
+
 ## Android (Kotlin / Jetpack Compose + HiveMQ MQTT Client)
 
 Abra `mobile/android` no Android Studio (JDK 17, ele baixa o Gradle 8.11.1 e o SDK 35).
 
 - Emulador: use `10.0.2.2` como host (endereço do Mac visto pelo emulador).
 - Celular físico: ative a Depuração USB e rode pelo Android Studio.
+
 ### Build e instalação pelo terminal (sem Android Studio)
 
 ```bash
