@@ -1,0 +1,40 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT/TCP - usado pelos apps mobile e pelo Node-RED
+      - "9001:9001"   # MQTT sobre WebSocket
+    volumes:
+      - ./mosquitto/config:/mosquitto/config:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_log:/mosquitto/log
+    networks:
+      - iot_net
+
+  nodered:
+    build: ./node-red
+    container_name: nodered
+    restart: unless-stopped
+    depends_on:
+      - mosquitto
+    ports:
+      - "1880:1880"
+    env_file: .env
+    environment:
+      - TZ=America/Sao_Paulo
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # acesso ao simulador rodando no Mac
+    volumes:
+      - nodered_data:/data
+    networks:
+      - iot_net
+
+volumes:
+  mosquitto_data:
+  mosquitto_log:
+  nodered_data:
+
+networks:
+  iot_net:
