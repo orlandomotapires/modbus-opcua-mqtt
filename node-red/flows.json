@@ -1,0 +1,333 @@
+[
+    {
+        "id": "tab_arquitetura_clp",
+        "type": "tab",
+        "label": "Mobile <-> MQTT <-> CLP",
+        "disabled": false,
+        "info": "Mobile -> Mosquitto (MQTT) -> Node-RED -> CLP (OPC-UA write)\nCLP -> Node-RED (Modbus TCP read) -> Mosquitto -> Mobile\n\nIP, portas e NodeIds vêm do arquivo .env."
+    },
+    {
+        "id": "comment_ida",
+        "type": "comment",
+        "z": "tab_arquitetura_clp",
+        "name": "IDA: Mobile -> MQTT -> Node-RED -> OPC-UA Write -> CLP",
+        "info": "",
+        "x": 290,
+        "y": 40,
+        "wires": []
+    },
+    {
+        "id": "mqtt_in_num1",
+        "type": "mqtt in",
+        "z": "tab_arquitetura_clp",
+        "name": "Caixa Input 1 (mobile/numero1)",
+        "topic": "mobile/numero1",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "broker_mosquitto",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 170,
+        "y": 100,
+        "wires": [
+            [
+                "func_prepara_opcua"
+            ]
+        ]
+    },
+    {
+        "id": "mqtt_in_num2",
+        "type": "mqtt in",
+        "z": "tab_arquitetura_clp",
+        "name": "Caixa Input 2 (mobile/numero2)",
+        "topic": "mobile/numero2",
+        "qos": "1",
+        "datatype": "utf8",
+        "broker": "broker_mosquitto",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "inputs": 0,
+        "x": 170,
+        "y": 160,
+        "wires": [
+            [
+                "func_prepara_opcua"
+            ]
+        ]
+    },
+    {
+        "id": "func_prepara_opcua",
+        "type": "function",
+        "z": "tab_arquitetura_clp",
+        "name": "Junta num1 + num2 (Int16)",
+        "func": "// O botão \"Enviar ao CLP\" publica mobile/numero1 e depois mobile/numero2 (mesma conexão,\n// ordem garantida pelo MQTT). numero1 abre o par, numero2 fecha; os dois vão ao CLP\n// numa única requisição OPC-UA. Nada é escrito se faltar um dos números.\nconst JANELA_MS = 1500;\nconst valor = Number(msg.payload);\nif (!Number.isFinite(valor)) {\n    node.warn(`Valor inválido em ${msg.topic}: ${msg.payload}`);\n    context.set('num1', null);\n    return null;\n}\n// Tipo fixado em Int16 (INT no CLP) para evitar BadTypeMismatch\nconst int16 = Math.max(-32768, Math.min(32767, Math.trunc(valor)));\n\nif (msg.topic === 'mobile/numero1') {\n    context.set('num1', { valor: int16, t: Date.now() });\n    node.status({ fill: 'yellow', shape: 'ring', text: `num1=${int16}, aguardando num2` });\n    return null;\n}\nif (msg.topic !== 'mobile/numero2') return null;\n\nconst num1 = context.get('num1');\ncontext.set('num1', null);\nif (!num1 || Date.now() - num1.t > JANELA_MS) {\n    node.warn('numero2 chegou sem numero1 — envie os dois pelo botão do app');\n    node.status({ fill: 'red', shape: 'ring', text: 'faltou num1' });\n    return null;\n}\n\nflow.set('num1', num1.valor);\nflow.set('num2', int16);\nnode.status({ fill: 'green', shape: 'dot', text: `num1=${num1.valor} num2=${int16}` });\nreturn {\n    topic: 'num1_num2',\n    payload: [\n        { nodeId: env.get('NODEID_NUM1'), datatype: 'Int16', value: num1.valor },\n        { nodeId: env.get('NODEID_NUM2'), datatype: 'Int16', value: int16 },\n    ],\n};\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 130,
+        "wires": [
+            [
+                "opcua_write_clp",
+                "debug_ida"
+            ]
+        ]
+    },
+    {
+        "id": "opcua_write_clp",
+        "type": "OpcUa-Client",
+        "z": "tab_arquitetura_clp",
+        "endpoint": "opcua_endpoint_clp",
+        "action": "writemultiple",
+        "deadbandtype": "a",
+        "deadbandvalue": 1,
+        "time": 10,
+        "timeUnit": "s",
+        "certificate": "n",
+        "localfile": "",
+        "localkeyfile": "",
+        "securitymode": "None",
+        "securitypolicy": "None",
+        "useTransport": false,
+        "maxChunkCount": 1,
+        "maxMessageSize": 8192,
+        "receiveBufferSize": 8192,
+        "sendBufferSize": 8192,
+        "name": "OPC-UA Write num1+num2 -> CLP",
+        "x": 700,
+        "y": 100,
+        "wires": [
+            [
+                "debug_opcua_status"
+            ]
+        ]
+    },
+    {
+        "id": "debug_ida",
+        "type": "debug",
+        "z": "tab_arquitetura_clp",
+        "name": "Escrita enviada [num1, num2]",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "payload",
+        "statusType": "auto",
+        "x": 720,
+        "y": 160,
+        "wires": []
+    },
+    {
+        "id": "debug_opcua_status",
+        "type": "debug",
+        "z": "tab_arquitetura_clp",
+        "name": "Retorno OPC-UA",
+        "active": true,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": false,
+        "complete": "true",
+        "targetType": "full",
+        "statusVal": "",
+        "statusType": "auto",
+        "x": 930,
+        "y": 100,
+        "wires": []
+    },
+    {
+        "id": "comment_volta",
+        "type": "comment",
+        "z": "tab_arquitetura_clp",
+        "name": "VOLTA: CLP -> Modbus TCP Read (FC03, Float32) -> Node-RED -> MQTT -> Mobile",
+        "info": "",
+        "x": 350,
+        "y": 240,
+        "wires": []
+    },
+    {
+        "id": "modbus_read_resultado",
+        "type": "modbus-read",
+        "z": "tab_arquitetura_clp",
+        "name": "Modbus FC03 resultado (2 regs)",
+        "topic": "resultado",
+        "showStatusActivities": true,
+        "logIOActivities": false,
+        "showErrors": true,
+        "showWarnings": true,
+        "unitid": "",
+        "dataType": "HoldingRegister",
+        "adr": "${RESULT_ADDR}",
+        "quantity": "2",
+        "rate": "500",
+        "rateUnit": "ms",
+        "delayOnStart": true,
+        "startDelayTime": "3",
+        "server": "modbus_client_clp",
+        "useIOFile": false,
+        "ioFile": "",
+        "useIOForPayload": false,
+        "emptyMsgOnFail": false,
+        "x": 190,
+        "y": 300,
+        "wires": [
+            [
+                "func_float32"
+            ],
+            []
+        ]
+    },
+    {
+        "id": "func_float32",
+        "type": "function",
+        "z": "tab_arquitetura_clp",
+        "name": "Registradores -> Float32",
+        "func": "// 2 holding registers -> Float32 (REAL no CLP)\nconst regs = msg.payload;\nif (!Array.isArray(regs) || regs.length < 2) return null;\n\nconst swap = env.get('RESULT_WORD_SWAP') === '1';\nconst [hi, lo] = swap ? [regs[1], regs[0]] : [regs[0], regs[1]];\n\nconst buf = Buffer.alloc(4);\nbuf.writeUInt16BE(hi & 0xFFFF, 0);\nbuf.writeUInt16BE(lo & 0xFFFF, 2);\nconst valor = buf.readFloatBE(0);\n\n// NaN = divisão por zero no CLP/simulador\nmsg.payload = Number.isNaN(valor) ? 'NaN' : Number(valor.toPrecision(7));\nreturn msg;\n",
+        "outputs": 1,
+        "timeout": 0,
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 440,
+        "y": 300,
+        "wires": [
+            [
+                "rbe_resultado",
+                "debug_volta"
+            ]
+        ]
+    },
+    {
+        "id": "rbe_resultado",
+        "type": "rbe",
+        "z": "tab_arquitetura_clp",
+        "name": "Só se mudar",
+        "func": "rbe",
+        "gap": "",
+        "start": "",
+        "inout": "out",
+        "septopics": false,
+        "property": "payload",
+        "topi": "topic",
+        "x": 640,
+        "y": 300,
+        "wires": [
+            [
+                "mqtt_out_resposta"
+            ]
+        ]
+    },
+    {
+        "id": "mqtt_out_resposta",
+        "type": "mqtt out",
+        "z": "tab_arquitetura_clp",
+        "name": "Retorno Mobile (mobile/resposta)",
+        "topic": "mobile/resposta",
+        "qos": "1",
+        "retain": "true",
+        "respTopic": "",
+        "contentType": "",
+        "userProps": "",
+        "correl": "",
+        "expiry": "",
+        "broker": "broker_mosquitto",
+        "x": 870,
+        "y": 300,
+        "wires": []
+    },
+    {
+        "id": "debug_volta",
+        "type": "debug",
+        "z": "tab_arquitetura_clp",
+        "name": "Resultado lido (Modbus)",
+        "active": false,
+        "tosidebar": true,
+        "console": false,
+        "tostatus": true,
+        "complete": "payload",
+        "targetType": "msg",
+        "statusVal": "payload",
+        "statusType": "auto",
+        "x": 670,
+        "y": 360,
+        "wires": []
+    },
+    {
+        "id": "broker_mosquitto",
+        "type": "mqtt-broker",
+        "name": "Mosquitto (docker)",
+        "broker": "mosquitto",
+        "port": "1883",
+        "clientid": "nodered_clp",
+        "autoConnect": true,
+        "usetls": false,
+        "protocolVersion": "4",
+        "keepalive": "60",
+        "cleansession": true,
+        "autoUnsubscribe": true,
+        "birthTopic": "",
+        "birthQos": "0",
+        "birthPayload": "",
+        "birthMsg": {},
+        "closeTopic": "",
+        "closeQos": "0",
+        "closePayload": "",
+        "closeMsg": {},
+        "willTopic": "",
+        "willQos": "0",
+        "willPayload": "",
+        "willMsg": {},
+        "userProps": "",
+        "sessionExpiry": ""
+    },
+    {
+        "id": "opcua_endpoint_clp",
+        "type": "OpcUa-Endpoint",
+        "endpoint": "${OPCUA_ENDPOINT}",
+        "secpol": "None",
+        "secmode": "None",
+        "none": true,
+        "login": false,
+        "usercert": false,
+        "usercertificate": "",
+        "userprivatekey": ""
+    },
+    {
+        "id": "modbus_client_clp",
+        "type": "modbus-client",
+        "name": "CLP Modbus TCP",
+        "clienttype": "tcp",
+        "bufferCommands": true,
+        "stateLogEnabled": false,
+        "queueLogEnabled": false,
+        "failureLogEnabled": true,
+        "tcpHost": "${CLP_HOST}",
+        "tcpPort": "${MODBUS_PORT}",
+        "tcpType": "DEFAULT",
+        "serialPort": "/dev/ttyUSB",
+        "serialType": "RTU-BUFFERD",
+        "serialBaudrate": "9600",
+        "serialDatabits": "8",
+        "serialStopbits": "1",
+        "serialParity": "none",
+        "serialConnectionDelay": "100",
+        "serialAsciiResponseStartDelimiter": "0x3A",
+        "unit_id": "${MODBUS_UNIT_ID}",
+        "commandDelay": "1",
+        "clientTimeout": "1000",
+        "reconnectOnTimeout": true,
+        "reconnectTimeout": "2000",
+        "parallelUnitIdsAllowed": true,
+        "showErrors": false,
+        "showWarnings": true,
+        "showLogs": true
+    }
+]
